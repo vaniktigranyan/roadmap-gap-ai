@@ -66,6 +66,9 @@ class GitHubClient:
                 'title': i['title'],
                 'body': i.get('body') or '',
                 'state': i['state'],
+                # 'completed' = the team shipped it, 'not_planned' = they saw it and declined.
+                # This distinction decides whether a closed ticket counts as COVERED or as a gap.
+                'state_reason': i.get('state_reason'),
                 'labels': [l['name'] for l in i.get('labels', [])],
                 'milestone_title': i['milestone']['title'] if i.get('milestone') else None,
                 'reactions_plus1': i.get('reactions', {}).get('+1', 0),

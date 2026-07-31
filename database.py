@@ -29,6 +29,7 @@ class GapAnalysisDB:
                     title TEXT NOT NULL,
                     body TEXT,
                     state TEXT,
+                    state_reason TEXT,
                     labels TEXT,
                     milestone_title TEXT,
                     reactions_plus1 INTEGER,
@@ -68,6 +69,8 @@ class GapAnalysisDB:
                     confidence_components TEXT,
                     evidence_review_ids TEXT,
                     matched_issue_number INTEGER,
+                    closest_issue_number INTEGER,
+                    closest_issue_similarity REAL,
                     reasoning TEXT,
                     cluster_id INTEGER,
                     rank INTEGER,
@@ -84,11 +87,25 @@ class GapAnalysisDB:
                     confidence_components TEXT,
                     evidence_review_ids TEXT,
                     matched_issue_number INTEGER,
+                    closest_issue_number INTEGER,
+                    closest_issue_similarity REAL,
                     reasoning TEXT,
                     cluster_id INTEGER,
                     in_top5 INTEGER DEFAULT 0
                 )
             ''')
+
+            cursor.execute("PRAGMA table_info(issues)")
+            if 'state_reason' not in {r[1] for r in cursor.fetchall()}:
+                cursor.execute('ALTER TABLE issues ADD COLUMN state_reason TEXT')
+
+            for table in ('gaps', 'candidates'):
+                cursor.execute(f"PRAGMA table_info({table})")
+                cols = {row[1] for row in cursor.fetchall()}
+                if 'closest_issue_number' not in cols:
+                    cursor.execute(f'ALTER TABLE {table} ADD COLUMN closest_issue_number INTEGER')
+                if 'closest_issue_similarity' not in cols:
+                    cursor.execute(f'ALTER TABLE {table} ADD COLUMN closest_issue_similarity REAL')
 
             conn.commit()
 
@@ -119,11 +136,11 @@ class GapAnalysisDB:
             for i in issues:
                 cursor.execute('''
                     INSERT INTO issues
-                    (number, title, body, state, labels, milestone_title, reactions_plus1,
-                     comments, created_at, closed_at, html_url)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (number, title, body, state, state_reason, labels, milestone_title,
+                     reactions_plus1, comments, created_at, closed_at, html_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
-                    i['number'], i['title'], i.get('body', ''), i['state'],
+                    i['number'], i['title'], i.get('body', ''), i['state'], i.get('state_reason'),
                     json.dumps(i.get('labels', [])), i.get('milestone_title'),
                     i.get('reactions_plus1', 0), i.get('comments', 0),
                     i.get('created_at'), i.get('closed_at'), i.get('html_url')
@@ -134,11 +151,11 @@ class GapAnalysisDB:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT number, title, body, state, labels, milestone_title,
+                SELECT number, title, body, state, state_reason, labels, milestone_title,
                        reactions_plus1, comments, created_at, closed_at, html_url, cluster_id
                 FROM issues
             ''')
-            cols = ['number', 'title', 'body', 'state', 'labels', 'milestone_title',
+            cols = ['number', 'title', 'body', 'state', 'state_reason', 'labels', 'milestone_title',
                     'reactions_plus1', 'comments', 'created_at', 'closed_at', 'html_url', 'cluster_id']
             result = []
             for row in cursor.fetchall():
@@ -211,14 +228,17 @@ class GapAnalysisDB:
                 cursor.execute('''
                     INSERT INTO gaps
                     (need_text, verdict, confidence, confidence_components,
-                     evidence_review_ids, matched_issue_number, reasoning, cluster_id, rank)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     evidence_review_ids, matched_issue_number,
+                     closest_issue_number, closest_issue_similarity,
+                     reasoning, cluster_id, rank)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     g['need_text'], g['verdict'], g['confidence'],
                     json.dumps(g.get('confidence_components', {})),
                     json.dumps(g.get('evidence_review_ids', [])),
-                    g.get('matched_issue_number'), g.get('reasoning', ''),
-                    g.get('cluster_id'), rank
+                    g.get('matched_issue_number'),
+                    g.get('closest_issue_number'), g.get('closest_issue_similarity'),
+                    g.get('reasoning', ''), g.get('cluster_id'), rank
                 ))
             conn.commit()
 
@@ -227,11 +247,15 @@ class GapAnalysisDB:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT need_text, verdict, confidence, confidence_components,
-                       evidence_review_ids, matched_issue_number, reasoning, cluster_id, rank
+                       evidence_review_ids, matched_issue_number,
+                       closest_issue_number, closest_issue_similarity,
+                       reasoning, cluster_id, rank
                 FROM gaps ORDER BY rank ASC
             ''')
             cols = ['need_text', 'verdict', 'confidence', 'confidence_components',
-                    'evidence_review_ids', 'matched_issue_number', 'reasoning', 'cluster_id', 'rank']
+                    'evidence_review_ids', 'matched_issue_number',
+                    'closest_issue_number', 'closest_issue_similarity',
+                    'reasoning', 'cluster_id', 'rank']
             result = []
             for row in cursor.fetchall():
                 d = dict(zip(cols, row))
@@ -249,14 +273,18 @@ class GapAnalysisDB:
                 cursor.execute('''
                     INSERT INTO candidates
                     (need_text, verdict, confidence, confidence_components,
-                     evidence_review_ids, matched_issue_number, reasoning, cluster_id, in_top5)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     evidence_review_ids, matched_issue_number,
+                     closest_issue_number, closest_issue_similarity,
+                     reasoning, cluster_id, in_top5)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     c['need_text'], c['verdict'], c.get('confidence'),
                     json.dumps(c.get('confidence_components', {})),
                     json.dumps(c.get('evidence_review_ids', [])),
-                    c.get('matched_issue_number'), c.get('reasoning', ''),
-                    c.get('cluster_id'), int(c['need_text'] in top5_need_texts),
+                    c.get('matched_issue_number'),
+                    c.get('closest_issue_number'), c.get('closest_issue_similarity'),
+                    c.get('reasoning', ''), c.get('cluster_id'),
+                    int(c['need_text'] in top5_need_texts),
                 ))
             conn.commit()
 
@@ -265,11 +293,15 @@ class GapAnalysisDB:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT need_text, verdict, confidence, confidence_components,
-                       evidence_review_ids, matched_issue_number, reasoning, cluster_id, in_top5
+                       evidence_review_ids, matched_issue_number,
+                       closest_issue_number, closest_issue_similarity,
+                       reasoning, cluster_id, in_top5
                 FROM candidates ORDER BY confidence DESC NULLS LAST
             ''')
             cols = ['need_text', 'verdict', 'confidence', 'confidence_components',
-                    'evidence_review_ids', 'matched_issue_number', 'reasoning', 'cluster_id', 'in_top5']
+                    'evidence_review_ids', 'matched_issue_number',
+                    'closest_issue_number', 'closest_issue_similarity',
+                    'reasoning', 'cluster_id', 'in_top5']
             result = []
             for row in cursor.fetchall():
                 d = dict(zip(cols, row))

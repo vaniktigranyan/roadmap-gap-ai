@@ -15,6 +15,12 @@ load_dotenv()
 EMBED_MODEL_NAME = "all-MiniLM-L6-v2"
 GEN_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
 
+# Below MATCH_FLOOR there is no roadmap issue at all -> IGNORED.
+# Between MATCH_FLOOR and STRONG_MATCH_THRESHOLD the ticket is only topically adjacent,
+# which is never enough to claim the roadmap COVERS the need.
+MATCH_FLOOR = 0.4
+STRONG_MATCH_THRESHOLD = 0.55
+
 VERDICT_GAP_CERTAINTY = {
     'IGNORED': 1.0,
     'UNDER-PRIORITIZED': 0.75,
@@ -192,39 +198,110 @@ return {{"needs": []}}."""
         best_sim = float(sims[best_idx])
         best_issue = cluster_issues[best_idx]
 
-        if best_sim < 0.4:
+        if best_sim < MATCH_FLOOR:
             return {'matched_issue': None, 'verdict': 'IGNORED',
-                     'reasoning': f'No roadmap issue found addressing this (best similarity {best_sim:.2f} below threshold).'}
+                     'reasoning': f'No roadmap issue found addressing this (best similarity {best_sim:.2f} below threshold).',
+                     'closest_issue_number': best_issue['number'],
+                     'closest_issue_similarity': best_sim}
 
-        prompt = f"""User need: "{need_text}"
+        is_open = best_issue['state'] == 'open'
+        reason = best_issue.get('state_reason')
+        declined = (not is_open) and reason == 'not_planned'
+        shipped = (not is_open) and reason != 'not_planned'
+        # A 0.4-0.55 cosine on short text means "same topic area", not "same problem".
+        # Claiming the roadmap COVERS a need on that strength is not defensible, so a weak
+        # match can never earn COVERED - at best the ticket is adjacent but framed elsewhere.
+        strong_match = best_sim >= STRONG_MATCH_THRESHOLD
+
+        if is_open:
+            state_line = "OPEN — still unresolved"
+            allowed = ("UNDER-PRIORITIZED (it is open but stale — no milestone, little engagement) "
+                       "or MISUNDERSTOOD (wrong framing)")
+            if strong_match:
+                allowed = ("COVERED (it is actively scheduled: has a milestone or real engagement), "
+                           + allowed)
+        elif declined:
+            state_line = (f"CLOSED as NOT PLANNED on {best_issue.get('closed_at')} — the team saw this "
+                          f"ticket and deliberately declined to do it")
+            allowed = ("UNDER-PRIORITIZED (the team consciously deprioritized this need to the point of "
+                       "closing it) or MISUNDERSTOOD (what they declined was framed around a different "
+                       "problem than the real need). COVERED is NOT available — nothing was delivered.")
+        else:
+            state_line = (f"CLOSED as COMPLETED on {best_issue.get('closed_at')} — the team implemented "
+                          f"and shipped this ticket")
+            if strong_match:
+                allowed = ("COVERED (what they shipped genuinely serves this need) or MISUNDERSTOOD (they "
+                           "shipped a fix framed around a different problem, so the underlying need "
+                           "survives). UNDER-PRIORITIZED is NOT available — delivered work is not "
+                           "neglected backlog.")
+            else:
+                allowed = ("MISUNDERSTOOD only — the ticket was delivered but is too weakly related to "
+                           "claim it served this need, so the need survives whatever shipped.")
+
+        prompt = f"""User need (inferred from app reviews written around 2016): "{need_text}"
 
 Closest matching GitHub roadmap issue:
 Title: {best_issue['title']}
 Body: {best_issue['body'][:800]}
-State: {best_issue['state']}
+State: {state_line}
 Milestone: {best_issue.get('milestone_title') or 'none (unscheduled)'}
+Opened: {best_issue.get('created_at')}
 Community reactions (+1): {best_issue.get('reactions_plus1', 0)}
 Comments: {best_issue.get('comments', 0)}
 
-Classify the relationship between the user need and this issue. Choose exactly one:
-- "COVERED": the issue, if implemented, would fully satisfy the user need as stated
-- "UNDER-PRIORITIZED": the issue addresses the need but is stale/unscheduled/low-engagement (backlog, no milestone, open a long time, few reactions)
-- "MISUNDERSTOOD": the issue is nominally in the same area but is framed around a different problem than the actual user need (e.g. solves a technical symptom, not the workflow need)
+Definitions:
+- "COVERED": the roadmap genuinely serves this need — the team delivered it, or has it actively scheduled.
+- "UNDER-PRIORITIZED": the roadmap acknowledges the need but is not serving it — the ticket sits open
+  and neglected, or was closed as not-planned.
+- "MISUNDERSTOOD": the ticket is nominally in the same area but is framed around a different problem
+  than the real user need — a technical symptom rather than the workflow, comprehension or trust
+  problem the user is actually describing. The need survives whatever the team did.
 
-Return JSON: {{"verdict": "COVERED"|"UNDER-PRIORITIZED"|"MISUNDERSTOOD", "reasoning": "one or two sentences citing specifics from the issue text"}}"""
+Semantic match strength between the need and this ticket: {best_sim:.2f}{
+    ' (STRONG — this ticket really is about this need)' if strong_match
+    else ' (WEAK — the ticket is only topically adjacent. It shares a subject area with the need but '
+         'is very likely framed around a different concrete problem. COVERED is therefore NOT '
+         'available: we will not claim the roadmap serves a need on this strength of match.)'}
+
+Given this ticket's state and match strength, your only valid choices are: {allowed}
+
+Judge the framing honestly. Do not label something MISUNDERSTOOD merely because the wording differs —
+only when the underlying problem being solved is genuinely a different one.
+
+Return JSON: {{"verdict": "COVERED"|"UNDER-PRIORITIZED"|"MISUNDERSTOOD", "reasoning": "one or two sentences citing specifics from the issue text and its state"}}"""
 
         try:
             result = self._generate_json(prompt)
+            verdict = result.get('verdict', 'MISUNDERSTOOD')
+            reasoning = result.get('reasoning', '')
+            # Deterministic guards - ticket state and match strength are facts, not opinions.
+            if verdict == 'COVERED' and not strong_match:
+                verdict = 'MISUNDERSTOOD'
+                reasoning = (f"[auto-corrected: match to #{best_issue['number']} is only {best_sim:.2f}, "
+                             f"too weak to claim coverage] {reasoning}")
+            elif verdict == 'UNDER-PRIORITIZED' and shipped:
+                verdict = 'MISUNDERSTOOD'
+                reasoning = (f"[auto-corrected: #{best_issue['number']} was closed as completed, so it is "
+                             f"not neglected backlog] {reasoning}")
+            elif verdict == 'COVERED' and declined:
+                verdict = 'UNDER-PRIORITIZED'
+                reasoning = (f"[auto-corrected: #{best_issue['number']} was closed as not-planned, so "
+                             f"nothing was delivered] {reasoning}")
             return {
                 'matched_issue': best_issue['number'],
-                'verdict': result.get('verdict', 'UNDER-PRIORITIZED'),
-                'reasoning': result.get('reasoning', ''),
+                'verdict': verdict,
+                'reasoning': reasoning,
                 'similarity': best_sim,
+                'closest_issue_number': best_issue['number'],
+                'closest_issue_similarity': best_sim,
             }
         except Exception as e:
-            return {'matched_issue': best_issue['number'], 'verdict': 'UNDER-PRIORITIZED',
-                     'reasoning': f'LLM verdict classification failed ({e}); defaulting based on match.',
-                     'similarity': best_sim}
+            fallback = 'UNDER-PRIORITIZED' if is_open else 'MISUNDERSTOOD'
+            return {'matched_issue': best_issue['number'], 'verdict': fallback,
+                     'reasoning': f'LLM verdict classification failed ({e}); defaulted from issue state.',
+                     'similarity': best_sim,
+                     'closest_issue_number': best_issue['number'],
+                     'closest_issue_similarity': best_sim}
 
     # ---- Confidence ----
     @staticmethod
@@ -244,13 +321,19 @@ Return JSON: {{"verdict": "COVERED"|"UNDER-PRIORITIZED"|"MISUNDERSTOOD", "reason
         else:
             consistency = 0.5
 
-        gap_certainty = VERDICT_GAP_CERTAINTY.get(verdict, 0.5)
+        base_gap_certainty = VERDICT_GAP_CERTAINTY.get(verdict, 0.5)
+        # A harsh verdict (e.g. IGNORED=1.0) must not be able to fully mask weak,
+        # inconsistent evidence. Dampen the verdict's certainty credit by how
+        # internally consistent the supporting reviews actually are, so a
+        # low-consistency IGNORED gap can no longer outrank a well-evidenced
+        # UNDER-PRIORITIZED/MISUNDERSTOOD gap on verdict severity alone.
+        effective_gap_certainty = base_gap_certainty * (0.4 + 0.6 * consistency)
 
         confidence = (
             WEIGHTS['evidence_count'] * evidence_count +
             WEIGHTS['rating_spread'] * rating_spread +
             WEIGHTS['consistency'] * consistency +
-            WEIGHTS['roadmap_gap_certainty'] * gap_certainty
+            WEIGHTS['roadmap_gap_certainty'] * effective_gap_certainty
         )
 
         return {
@@ -259,7 +342,8 @@ Return JSON: {{"verdict": "COVERED"|"UNDER-PRIORITIZED"|"MISUNDERSTOOD", "reason
                 'evidence_count_norm': round(evidence_count, 3),
                 'rating_spread': round(rating_spread, 3),
                 'cross_signal_consistency': round(consistency, 3),
-                'roadmap_gap_certainty': gap_certainty,
+                'roadmap_gap_certainty': base_gap_certainty,
+                'effective_gap_certainty': round(effective_gap_certainty, 3),
                 'supporting_review_count': n,
             },
         }
@@ -283,10 +367,33 @@ Return JSON: {{"verdict": "COVERED"|"UNDER-PRIORITIZED"|"MISUNDERSTOOD", "reason
                 support_local_idx = [idx_map[rid] for rid in support_ids if rid in idx_map]
                 if len(support_local_idx) < 3:
                     continue
-                support_reviews = [cluster_reviews[i] for i in support_local_idx]
-                support_emb = cluster_review_emb[support_local_idx]
 
                 need_emb = self.embed_texts([need['need']])[0]
+
+                # Expand evidence beyond the LLM's initial pick: search the FULL review
+                # pool (not just this cluster's sample) for additional reviews that are
+                # semantically close to the need. The initial extraction only sees a
+                # capped sample of ~60 reviews per cluster, so real supporting evidence
+                # elsewhere in the corpus would otherwise be invisible in the trace.
+                all_review_emb = taxonomy['review_embeddings']
+                sims = all_review_emb @ need_emb / (
+                    np.linalg.norm(all_review_emb, axis=1) * np.linalg.norm(need_emb) + 1e-9
+                )
+                initial_ids = {cluster_reviews[i]['id'] for i in support_local_idx}
+                ranked_idx = np.argsort(-sims)
+                expanded_ids = set(initial_ids)
+                for idx in ranked_idx:
+                    if len(expanded_ids) >= 15:
+                        break
+                    if sims[idx] < 0.4:
+                        break
+                    expanded_ids.add(reviews[idx]['id'])
+
+                full_idx_map = {r['id']: i for i, r in enumerate(reviews)}
+                support_global_idx = [full_idx_map[rid] for rid in expanded_ids if rid in full_idx_map]
+                support_reviews = [reviews[i] for i in support_global_idx]
+                support_emb = all_review_emb[support_global_idx]
+
                 # Match against the FULL issue pool, not just this cluster: KMeans is
                 # imperfect on short noisy text and can silo a genuinely relevant issue
                 # into a different cluster than the review topic that names the same need.
@@ -304,6 +411,8 @@ Return JSON: {{"verdict": "COVERED"|"UNDER-PRIORITIZED"|"MISUNDERSTOOD", "reason
                         'confidence_components': {},
                         'evidence_review_ids': [r['id'] for r in support_reviews],
                         'matched_issue_number': match.get('matched_issue'),
+                        'closest_issue_number': match.get('closest_issue_number'),
+                        'closest_issue_similarity': match.get('closest_issue_similarity'),
                         'reasoning': reasoning,
                         'cluster_id': cid,
                     })
@@ -318,6 +427,8 @@ Return JSON: {{"verdict": "COVERED"|"UNDER-PRIORITIZED"|"MISUNDERSTOOD", "reason
                     'confidence_components': conf['components'],
                     'evidence_review_ids': [r['id'] for r in support_reviews],
                     'matched_issue_number': match.get('matched_issue'),
+                    'closest_issue_number': match.get('closest_issue_number'),
+                    'closest_issue_similarity': match.get('closest_issue_similarity'),
                     'reasoning': reasoning,
                     'cluster_id': cid,
                 })
