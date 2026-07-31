@@ -1,0 +1,10 @@
+streamlit
+pandas
+plotly
+python-dotenv
+requests
+duckdb
+openai
+sentence-transformers
+scikit-learn
+numpy
