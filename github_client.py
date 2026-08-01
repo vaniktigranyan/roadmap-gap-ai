@@ -4,26 +4,37 @@ from typing import List, Dict
 import requests
 from dotenv import load_dotenv
 
+from product import CURRENT
+
 load_dotenv()
 
 
 class GitHubClient:
     def __init__(self, repo: str = None):
-        self.repo = repo or os.getenv('GITHUB_REPO', 'guardianproject/orbot-android')
+        self.repo = repo or CURRENT.repo
         self.token = os.getenv('GITHUB_TOKEN')
         self.base_url = f"https://api.github.com/repos/{self.repo}"
         self.headers = {'Accept': 'application/vnd.github+json'}
         if self.token:
             self.headers['Authorization'] = f'Bearer {self.token}'
 
-    def _paginated_get(self, path: str, params: Dict = None) -> List[Dict]:
+    # GitHub refuses to paginate past 10,000 items (page * per_page), answering 422.
+    # Large repos like hrydgard/ppsspp exceed that, so we cap and take the most
+    # recently updated slice - which is also the part of the roadmap that reflects
+    # what the team is working on now.
+    MAX_ITEMS = 10000
+    PER_PAGE = 100
+
+    def _paginated_get(self, path: str, params: Dict = None, on_page=None) -> List[Dict]:
         params = dict(params or {})
-        params['per_page'] = 100
+        params['per_page'] = self.PER_PAGE
+        max_pages = self.MAX_ITEMS // self.PER_PAGE
         page = 1
         results = []
-        while True:
+        while page <= max_pages:
             params['page'] = page
             resp = requests.get(f"{self.base_url}{path}", headers=self.headers, params=params)
+
             if resp.status_code == 403 and 'rate limit' in resp.text.lower():
                 reset = int(resp.headers.get('X-RateLimit-Reset', time.time() + 60))
                 wait = max(reset - time.time(), 1)
@@ -31,12 +42,18 @@ class GitHubClient:
                     f"GitHub rate limit exceeded. Resets in {int(wait)}s. "
                     f"Set GITHUB_TOKEN in .env to raise the limit to 5000/hr."
                 )
+            if resp.status_code == 422:
+                # Hit the pagination ceiling - keep what we already have.
+                break
+
             resp.raise_for_status()
             batch = resp.json()
             if not batch:
                 break
             results.extend(batch)
-            if len(batch) < 100:
+            if on_page:
+                on_page(len(results))
+            if len(batch) < self.PER_PAGE:
                 break
             page += 1
         return results
@@ -55,8 +72,11 @@ class GitHubClient:
             for m in raw
         ]
 
-    def fetch_issues(self) -> List[Dict]:
-        raw = self._paginated_get('/issues', {'state': 'all'})
+    def fetch_issues(self, on_page=None) -> List[Dict]:
+        # sort=updated keeps the freshest, most decision-relevant part of the roadmap
+        # when a repo is large enough to hit the 10k pagination ceiling.
+        raw = self._paginated_get('/issues', {'state': 'all', 'sort': 'updated',
+                                              'direction': 'desc'}, on_page=on_page)
         issues = []
         for i in raw:
             if 'pull_request' in i:

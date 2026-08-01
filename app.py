@@ -1,5 +1,7 @@
 import os
 import json
+import time
+import sqlite3
 import statistics
 
 import streamlit as st
@@ -11,10 +13,12 @@ from github_client import GitHubClient
 from reviews_source import fetch_reviews
 from gap_analyzer import GapAnalyzer
 from project_chat import ProjectChat, build_context
+from timeline import gap_timeline, corpus_summary, month_label
+from product import get_product, list_products, CURRENT
 from i18n import get_text
 
 st.set_page_config(
-    page_title="Silent Stakeholder — Orbot",
+    page_title=f"Silent Stakeholder — {CURRENT.name}",
     page_icon="🕵️",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -113,6 +117,29 @@ CSS = """
   .chip .v { font-weight: 680; margin-left: 0.15rem; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.95em; }
 
+  /* ---------- response-latency timeline ---------- */
+  .tl {
+    display: flex; align-items: stretch; gap: 0.6rem; margin: 0.95rem 0 0.2rem 0;
+    padding: 0.7rem 0.85rem; border-radius: 10px;
+    background: rgba(128,128,128,0.045); border: 1px solid rgba(128,128,128,0.14);
+  }
+  .tl-node { flex: 0 0 auto; max-width: 34%; }
+  .tl-node.right { text-align: right; }
+  .tl-when { font-size: 0.78rem; font-weight: 680; line-height: 1.3; }
+  .tl-what { font-size: 0.72rem; color: rgba(140,140,150,0.92); line-height: 1.35; margin-top: 0.1rem; }
+  .tl-mid { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+  .tl-track { position: relative; height: 2px; margin: 0.35rem 0; }
+  .tl-dot {
+    position: absolute; top: -3px; width: 8px; height: 8px; border-radius: 50%;
+  }
+  .tl-dot.l { left: 0; } .tl-dot.r { right: 0; }
+  .tl-latency {
+    text-align: center; font-size: 0.75rem; font-weight: 720; letter-spacing: 0.01em;
+  }
+  .tl-latency-sub {
+    text-align: center; font-size: 0.68rem; color: rgba(140,140,150,0.85); margin-top: 0.05rem;
+  }
+
   /* ---------- evidence ---------- */
   .quote {
     position: relative; padding: 0.55rem 0 0.55rem 0.85rem; margin: 0.5rem 0;
@@ -178,12 +205,39 @@ st.markdown(CSS, unsafe_allow_html=True)
 
 
 @st.cache_resource
-def get_db():
-    return GapAnalysisDB()
+def get_db(db_path: str):
+    return GapAnalysisDB(db_path)
+
+
+def stored_gap_count(db_path: str) -> int:
+    """How many results a product already has. Opened read-only so that merely
+    browsing the product list never creates an empty database."""
+    if not os.path.exists(db_path):
+        return 0
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            return con.execute("SELECT COUNT(*) FROM gaps").fetchone()[0]
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return 0
 
 
 def t(key: str, **kwargs) -> str:
     return get_text(st.session_state.get('lang', 'en'), key, **kwargs)
+
+
+def agent_label(agent_key: str, fallback: str) -> str:
+    """Panel role names are stored in English in the transcript; show them translated."""
+    translated = t(f'agent_{agent_key}')
+    return fallback if translated == f'agent_{agent_key}' else translated
+
+
+def localise_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Raw-data tables ship database column names; give them readable headers."""
+    return df.rename(columns={c: t(f'col_{c}') for c in df.columns
+                              if t(f'col_{c}') != f'col_{c}'})
 
 
 def conf_gradient(c: float) -> str:
@@ -201,61 +255,109 @@ def pill(text: str, color: str, outline: bool = False) -> str:
     return f'<span class="pill" style="background:{color};color:#fff">{text}</span>'
 
 
-def load_debate():
-    if not os.path.exists('debate_result.json'):
-        return None
-    try:
-        with open('debate_result.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception:
-        return None
+def load_debate(path: str):
+    for candidate in (path, 'debate_result.json'):
+        if candidate and os.path.exists(candidate):
+            try:
+                with open(candidate, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+    return None
 
 
-def run_pipeline():
-    db = get_db()
-    progress = st.progress(0)
-    status = st.empty()
+def run_pipeline(product):
+    """Full analysis. Large repos take minutes, so every stage reports as it goes."""
+    db = get_db(product.db_path)
+    started = time.time()
 
-    status.text(t('status_fetching_github'))
-    gh = GitHubClient()
-    milestones = gh.fetch_milestones()
-    issues = gh.fetch_issues()
-    progress.progress(20)
+    def elapsed():
+        secs = int(time.time() - started)
+        return f"{secs // 60}m {secs % 60}s" if secs >= 60 else f"{secs}s"
 
-    status.text(t('status_fetching_reviews'))
-    reviews = fetch_reviews()
-    progress.progress(35)
+    with st.status(t('run_status_title', product=product.name), expanded=True) as status:
+        bar = st.progress(0.0)
+        line = st.empty()
 
-    db.replace_milestones(milestones)
-    db.replace_issues(issues)
-    db.replace_reviews(reviews)
-    reviews = db.get_reviews()
-    progress.progress(45)
+        def say(msg, frac):
+            line.markdown(f"**{msg}**  \n<span style='color:rgba(140,140,150,0.9);"
+                          f"font-size:0.8rem'>{t('run_elapsed', time=elapsed())}</span>",
+                          unsafe_allow_html=True)
+            bar.progress(min(max(frac, 0.0), 1.0))
 
-    status.text(t('status_clustering'))
-    ga = GapAnalyzer()
-    result = ga.run(issues, reviews, top_n=5)
-    progress.progress(85)
+        try:
+            say(t('run_github', repo=product.repo), 0.02)
+            gh = GitHubClient(product.repo)
+            milestones = gh.fetch_milestones()
+            say(t('run_github_milestones', n=len(milestones), repo=product.repo), 0.04)
 
-    status.text(t('status_saving'))
-    db.replace_clusters(list(result['clusters'].values()))
-    db.set_issue_clusters({issues[i]['number']: int(result['issue_clusters'][i]) for i in range(len(issues))})
-    db.set_review_clusters({reviews[i]['id']: int(result['review_clusters'][i]) for i in range(len(reviews))})
-    db.replace_gaps(result['gaps'])
-    db.replace_candidates(result['all_candidates'], {g['need_text'] for g in result['gaps']})
-    progress.progress(100)
-    status.text(t('status_done'))
+            # Big repos page slowly - show the count climbing so it never looks frozen.
+            def on_page(count):
+                say(t('run_github_paging', n=count, repo=product.repo),
+                    0.04 + 0.26 * min(count / 10000, 1.0))
+
+            issues = gh.fetch_issues(on_page=on_page)
+            say(t('run_github_done', n=len(issues)), 0.32)
+
+            say(t('run_reviews', package=product.package_name), 0.34)
+            reviews = fetch_reviews(product.package_name)
+            if not reviews:
+                status.update(label=t('run_no_reviews', package=product.package_name),
+                              state="error")
+                return
+            say(t('run_reviews_done', n=len(reviews)), 0.40)
+
+            say(t('run_saving_sources'), 0.42)
+            db.replace_milestones(milestones)
+            db.replace_issues(issues)
+            db.replace_reviews(reviews)
+            reviews = db.get_reviews()
+
+            # Clustering + per-area LLM mining is the long tail; map it onto 45-92%.
+            stage = {'i': 0}
+
+            def analysis_progress(msg):
+                stage['i'] += 1
+                say(msg, 0.45 + 0.47 * min(stage['i'] / 20, 1.0))
+
+            ga = GapAnalyzer(product=product)
+            result = ga.run(issues, reviews, top_n=5, progress=analysis_progress)
+
+            say(t('run_saving_results'), 0.95)
+            db.replace_clusters(list(result['clusters'].values()))
+            db.set_issue_clusters({issues[i]['number']: int(result['issue_clusters'][i])
+                                   for i in range(len(issues))})
+            db.set_review_clusters({reviews[i]['id']: int(result['review_clusters'][i])
+                                    for i in range(len(reviews))})
+            db.replace_gaps(result['gaps'])
+            db.replace_candidates(result['all_candidates'],
+                                  {g['need_text'] for g in result['gaps']})
+
+            say(t('run_done', n=len(result['gaps'])), 1.0)
+            status.update(label=t('run_status_done', product=product.name, time=elapsed()),
+                          state="complete", expanded=False)
+        except Exception as e:
+            status.update(label=t('run_status_failed', error=str(e)[:160]), state="error")
+            st.exception(e)
+            return
+
+    st.success(t('run_success', n=len(result['gaps']), product=product.name, time=elapsed()))
+    # Any button press reruns the script, which redraws the page against the new results.
+    st.button(t('run_show_results'), type="primary")
 
 
 # ------------------------------------------------------------------ hero
-def render_hero(issues, reviews, gaps, candidates, ruling):
+def render_hero(issues, reviews, gaps, candidates, ruling, latency, product):
     st.markdown(
         f'<div class="hero">'
         f'  <div class="hero-eyebrow">{t("hero_eyebrow")}</div>'
         f'  <div class="hero-title">{t("hero_title_a")}<span class="accent">{t("hero_title_b")}</span></div>'
         f'  <div class="hero-sub">{t("hero_sub")}</div>'
         f'  <div class="hero-meta">'
-        f'    <span class="hero-meta-item">{t("hero_roadmap")} <b>{len(issues)}</b> issues</span>'
+        f'    <span class="hero-meta-item">{t("hero_product")} <b>{product.name}</b></span>'
+        f'    <span class="hero-meta-item">{t("hero_roadmap")} '
+        f'      <a href="{product.repo_url}" style="color:inherit"><b>{product.repo}</b></a> '
+        f'      · <b>{len(issues)}</b> issues</span>'
         f'    <span class="hero-meta-item">{t("hero_signals")} <b>{len(reviews)}</b> {t("hero_reviews_word")}</span>'
         f'    <span class="hero-meta-item">{t("hero_considered")} <b>{len(candidates)}</b> {t("hero_candidates_word")}</span>'
         f'  </div>'
@@ -273,6 +375,11 @@ def render_hero(issues, reviews, gaps, candidates, ruling):
         (f"{cited}", t('stat_cited')),
         (mix or "—", t('stat_verdicts')),
     ]
+    if latency:
+        if latency['never_count']:
+            stats.append((f"{latency['never_count']}/{len(gaps)}", t('stat_never')))
+        if latency['worst_latency_label']:
+            stats.append((latency['worst_latency_label'], t('stat_worst_latency')))
     if ruling and ruling.get('per_gap'):
         stats.append((f"{upheld}/{len(ruling['per_gap'])}", t('stat_upheld')))
 
@@ -285,8 +392,59 @@ def render_hero(issues, reviews, gaps, candidates, ruling):
     )
 
 
+def render_timeline(tl: dict):
+    """When users voiced the need vs when (or whether) the roadmap answered."""
+    never = tl['status'] == 'never'
+    left_when = f"{month_label(tl['first_signal'])} – {month_label(tl['last_signal'])}"
+    left_what = t('tl_users_voiced', n=tl['n_signals'])
+
+    if never:
+        line_color, dot_r = '#e11d48', '#e11d48'
+        track = (f'<div style="border-top:2px dashed {line_color}55;height:0"></div>')
+        latency = t('tl_never')
+        latency_sub = (t('tl_closest_only', number=tl['closest_number'],
+                         sim=f"{tl['closest_similarity']:.2f}", when=month_label(tl['closest_created']))
+                       if tl['closest_number'] else '')
+        right_when = t('tl_no_ticket')
+        right_what = ''
+    else:
+        status_color = {'open': '#ea580c', 'resolved': '#059669', 'declined': '#e11d48'}
+        dot_r = status_color.get(tl['status'], '#6b7280')
+        line_color = '#ea580c' if (tl['latency_days'] or 0) > 365 else '#0891b2'
+        track = (f'<div style="border-top:2px solid {line_color}55;height:0"></div>')
+        latency = tl['latency_label'] or '—'
+        latency_sub = t('tl_roadmap_silent')
+        right_when = month_label(tl['issue_created'])
+        if tl['status'] == 'open':
+            right_what = t('tl_opened_still_open', number=tl['issue_number'])
+        elif tl['status'] == 'declined':
+            right_what = t('tl_declined', number=tl['issue_number'])
+        else:
+            right_what = t('tl_resolved_in', number=tl['issue_number'], span=tl['resolution_label'] or '—')
+
+    st.markdown(
+        f'<div class="tl">'
+        f'  <div class="tl-node">'
+        f'    <div class="tl-when">{left_when}</div><div class="tl-what">{left_what}</div>'
+        f'  </div>'
+        f'  <div class="tl-mid">'
+        f'    <div class="tl-latency" style="color:{line_color}">{latency}</div>'
+        f'    <div class="tl-track">'
+        f'      <div class="tl-dot l" style="background:#0891b2"></div>{track}'
+        f'      <div class="tl-dot r" style="background:{dot_r}"></div>'
+        f'    </div>'
+        f'    <div class="tl-latency-sub">{latency_sub}</div>'
+        f'  </div>'
+        f'  <div class="tl-node right">'
+        f'    <div class="tl-when">{right_when}</div><div class="tl-what">{right_what}</div>'
+        f'  </div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
 # ------------------------------------------------------------------ gap card
-def render_gap_card(rank, gap, reviews_by_id, issues_by_number, total_reviews, gap_ruling):
+def render_gap_card(rank, gap, reviews_by_id, issues_by_number, total_reviews, gap_ruling, tl):
     color = VERDICT_COLORS.get(gap['verdict'], '#6b7280')
     conf = gap['confidence']
     ev = [reviews_by_id[i] for i in gap.get('evidence_review_ids', []) if i in reviews_by_id]
@@ -332,6 +490,8 @@ def render_gap_card(rank, gap, reviews_by_id, issues_by_number, total_reviews, g
             chips.append(f'<span class="chip"><span class="k">{t("chip_roadmap")}</span>'
                          f'<span class="v">{t("chip_no_issue")}</span></span>')
         st.markdown(f'<div class="chips">{"".join(chips)}</div>', unsafe_allow_html=True)
+
+        render_timeline(tl)
 
         if gap_ruling and gap_ruling.get('note'):
             st.caption(f"⚖️ {gap_ruling['note']}")
@@ -445,9 +605,11 @@ def render_panel(debate, gaps):
 
     panel = debate.get('panel', {})
     roster = "".join(
-        f'<div class="roster-item"><span>{v["emoji"]}</span><span>{v["label"]}</span></div>'
-        for v in panel.values()
-    ) + '<div class="roster-item"><span>⚖️</span><span>Judge</span></div>'
+        f'<div class="roster-item"><span>{v["emoji"]}</span>'
+        f'<span>{agent_label(key, v["label"])}</span></div>'
+        for key, v in panel.items()
+    ) + (f'<div class="roster-item"><span>⚖️</span>'
+         f'<span>{agent_label("judge", "Judge")}</span></div>')
     st.markdown(f'<div class="roster">{roster}</div>', unsafe_allow_html=True)
 
     r = debate.get('rulings', {})
@@ -497,7 +659,7 @@ def render_panel(debate, gaps):
             for e in rounds[rnd]:
                 st.markdown(
                     f'<div class="speaker"><div class="speaker-emoji">{e["emoji"]}</div>'
-                    f'<div><div class="speaker-name">{e["label"]}</div>'
+                    f'<div><div class="speaker-name">{agent_label(e["agent"], e["label"])}</div>'
                     f'<div class="speaker-role">{phase_names.get(e["round"], "")}</div></div></div>',
                     unsafe_allow_html=True,
                 )
@@ -558,17 +720,21 @@ def render_analyst(issues, reviews, milestones, clusters, candidates, debate, ga
             if issues:
                 df = pd.DataFrame(issues)
                 df['cluster'] = df['cluster_id'].map(lbl)
-                st.dataframe(df[['number', 'title', 'state', 'milestone_title', 'cluster',
-                                 'reactions_plus1', 'html_url']], width="stretch", hide_index=True)
+                st.dataframe(
+                    localise_columns(df[['number', 'title', 'state', 'milestone_title',
+                                         'cluster', 'reactions_plus1', 'html_url']]),
+                    width="stretch", hide_index=True)
         with sub[1]:
             if reviews:
                 df = pd.DataFrame(reviews)
                 df['cluster'] = df['cluster_id'].map(lbl)
-                st.dataframe(df[['id', 'star', 'review_date', 'cluster', 'review_text']],
-                             width="stretch", hide_index=True)
+                st.dataframe(
+                    localise_columns(df[['id', 'star', 'review_date', 'cluster', 'review_text']]),
+                    width="stretch", hide_index=True)
         with sub[2]:
             if milestones:
-                st.dataframe(pd.DataFrame(milestones), width="stretch", hide_index=True)
+                st.dataframe(localise_columns(pd.DataFrame(milestones)),
+                             width="stretch", hide_index=True)
 
 
 # ------------------------------------------------------------------ main
@@ -581,22 +747,45 @@ def main():
         cur = 'English' if st.session_state['lang'] == 'en' else 'Русский'
         st.session_state['lang'] = opts[st.selectbox(
             t('language_label'), list(opts), index=list(opts).index(cur))]
+
+        st.divider()
+        catalogue = list_products()
+        if catalogue:
+            names = [p.name for p in catalogue]
+            default_idx = next((i for i, p in enumerate(catalogue)
+                                if p.package_name == CURRENT.package_name), 0)
+            chosen_name = st.selectbox(t('product_label'), names, index=default_idx,
+                                       help=t('product_help'))
+            product = next(p for p in catalogue if p.name == chosen_name)
+        else:
+            product = CURRENT
+        n_stored = stored_gap_count(product.db_path)
+        st.caption(
+            f"{t('sidebar_roadmap')} `{product.repo}`  \n"
+            f"{t('sidebar_signals')} `{product.source_id}`  \n"
+            + (t('product_ready', n=n_stored) if n_stored else t('product_not_analysed'))
+        )
+
         st.divider()
         analyst = st.toggle(t('advanced_mode'), value=False, help=t('advanced_mode_help'))
         st.divider()
         st.caption(t('sidebar_caption'))
         if st.button(t('run_button'), width="stretch"):
-            run_pipeline()
+            run_pipeline(product)
 
-    db = get_db()
+    db = get_db(product.db_path)
     issues, reviews = db.get_issues(), db.get_reviews()
     milestones, clusters = db.get_milestones(), db.get_clusters()
     gaps, candidates = db.get_gaps(), db.get_candidates()
-    debate = load_debate()
+    debate = load_debate(product.debate_path)
     ruling = (debate or {}).get('rulings', {})
     ruling_by_rank = {pg.get('rank'): pg for pg in ruling.get('per_gap', [])}
 
-    render_hero(issues, reviews, gaps, candidates, ruling)
+    reviews_by_id = {r['id']: r for r in reviews}
+    issues_by_number = {i['number']: i for i in issues}
+    latency = corpus_summary(gaps, reviews_by_id, issues_by_number) if gaps else None
+
+    render_hero(issues, reviews, gaps, candidates, ruling, latency, product)
 
     if not gaps:
         st.info(t('no_analysis_yet'))
@@ -606,10 +795,9 @@ def main():
     st.markdown(f'<div class="sec-title">{t("top_needs_header")}</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="sec-sub">{t("top_needs_caption")}</div>', unsafe_allow_html=True)
 
-    reviews_by_id = {r['id']: r for r in reviews}
-    issues_by_number = {i['number']: i for i in issues}
     for i, gap in enumerate(gaps, 1):
-        render_gap_card(i, gap, reviews_by_id, issues_by_number, len(reviews), ruling_by_rank.get(i))
+        render_gap_card(i, gap, reviews_by_id, issues_by_number, len(reviews),
+                        ruling_by_rank.get(i), latency['timelines'][i - 1])
 
     st.write("")
     st.divider()

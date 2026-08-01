@@ -9,6 +9,8 @@ import os
 import statistics
 from typing import List, Dict
 
+from timeline import gap_timeline, month_label
+from product import CURRENT
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -16,9 +18,9 @@ load_dotenv()
 
 GEN_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
 
-SYSTEM_PROMPT = """You are the analyst behind a "Silent Stakeholder" gap analysis of Orbot
-(the Tor proxy app for Android). You cross-analyzed the team's GitHub roadmap against real
-user reviews to surface LATENT unmet needs — needs users never stated outright.
+SYSTEM_PROMPT_TEMPLATE = """You are the analyst behind a "Silent Stakeholder" gap analysis of
+{product_label}. You cross-analyzed the team's GitHub roadmap ({repo}) against real user reviews
+to surface LATENT unmet needs — needs users never stated outright.
 
 You are being questioned by a user or a hackathon judge. Answer from the CONTEXT below only.
 
@@ -28,6 +30,8 @@ Rules:
 - If the context does not contain the answer, say so plainly. Never invent review IDs,
   issue numbers, or statistics.
 - Be concise and direct. A few sentences is usually right; use short bullets for lists.
+- Response latency is a headline finding: many roadmap issues were opened long after users had
+  already voiced the need. Use the per-need LATENCY lines when relevance or urgency is questioned.
 - Explain reasoning when asked "how did you conclude this" — walk through the actual
   evidence chain (which reviews, why they imply the latent need, what the roadmap does
   or doesn't say).
@@ -52,7 +56,9 @@ def build_context(gaps: List[Dict], candidates: List[Dict], reviews: List[Dict],
 
     lines = []
     lines.append("=== CORPUS ===")
-    lines.append(f"Product: Orbot (guardianproject/orbot-android), reviews for org.torproject.android")
+    product = CURRENT
+    lines.append(f"Product: {product.label}")
+    lines.append(f"Roadmap repo: {product.repo}. Reviews for package: {product.package_name}")
     lines.append(f"Roadmap: {len(issues)} GitHub issues. User signals: {len(reviews)} reviews.")
     lines.append(f"Shared functional taxonomy: {len(clusters)} clusters "
                  f"({', '.join(c['label'] for c in clusters[:14])}).")
@@ -99,6 +105,20 @@ def build_context(gaps: List[Dict], candidates: List[Dict], reviews: List[Dict],
                      f"({pct:.2f}% of the {len(reviews)}-review corpus); ratings: {_star_summary(ev_reviews)}")
         lines.append(f"Reasoning: {g.get('reasoning', '')}")
 
+        tl = gap_timeline(g, reviews_by_id, issues_by_number)
+        if tl['status'] == 'never':
+            lines.append(f"RESPONSE LATENCY: users voiced this {month_label(tl['first_signal'])}-"
+                         f"{month_label(tl['last_signal'])}; the roadmap NEVER opened a ticket for it. "
+                         f"Nearest ticket #{tl['closest_number']} is only {tl['closest_similarity']} "
+                         f"similar and was opened {month_label(tl['closest_created'])}.")
+        else:
+            lines.append(f"RESPONSE LATENCY: users voiced this {month_label(tl['first_signal'])}-"
+                         f"{month_label(tl['last_signal'])}; ticket #{tl['issue_number']} was opened "
+                         f"{month_label(tl['issue_created'])} - a delay of {tl['latency_label']}. "
+                         f"Status {tl['status']}"
+                         + (f", closed {month_label(tl['issue_closed'])} ({tl['resolution_label']} "
+                            f"after the last signal)." if tl['issue_closed'] else ", still open today."))
+
         if g.get('matched_issue_number'):
             iss = issues_by_number.get(g['matched_issue_number'])
             if iss:
@@ -134,14 +154,17 @@ def build_context(gaps: List[Dict], candidates: List[Dict], reviews: List[Dict],
 
 
 class ProjectChat:
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: str = None, product=None):
         api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not api_key:
             raise ValueError("OPENAI_API_KEY not found in environment variables")
         self.client = OpenAI(api_key=api_key)
+        self.product = product or CURRENT
 
     def ask(self, question: str, context: str, history: List[Dict] = None) -> str:
-        messages = [{"role": "system", "content": SYSTEM_PROMPT + "\n\n=== CONTEXT ===\n" + context}]
+        system = SYSTEM_PROMPT_TEMPLATE.format(
+            product_label=self.product.label, repo=self.product.repo)
+        messages = [{"role": "system", "content": system + "\n\n=== CONTEXT ===\n" + context}]
         for turn in (history or [])[-6:]:
             messages.append({"role": turn['role'], "content": turn['content']})
         messages.append({"role": "user", "content": question})

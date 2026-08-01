@@ -2,10 +2,12 @@ import sqlite3
 import json
 from typing import List, Dict, Optional
 
+from product import CURRENT
+
 
 class GapAnalysisDB:
-    def __init__(self, db_path: str = "gaps.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: str = None):
+        self.db_path = db_path or CURRENT.db_path
         self.init_database()
 
     def init_database(self):
