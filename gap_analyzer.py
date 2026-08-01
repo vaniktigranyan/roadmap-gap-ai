@@ -10,6 +10,8 @@ from sentence_transformers import SentenceTransformer
 from openai import OpenAI, RateLimitError, APIStatusError
 from dotenv import load_dotenv
 
+from product import CURRENT
+
 load_dotenv()
 
 EMBED_MODEL_NAME = "all-MiniLM-L6-v2"
@@ -63,11 +65,12 @@ def _with_retry(fn, max_attempts: int = 5):
 
 
 class GapAnalyzer:
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: str = None, product=None):
         api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not api_key:
             raise ValueError("OPENAI_API_KEY not found in environment variables")
         self.client = OpenAI(api_key=api_key)
+        self.product = product or CURRENT
         self._embedder = None
 
     @property
@@ -89,11 +92,13 @@ class GapAnalyzer:
         return json.loads(_strip_json_fence(response.choices[0].message.content))
 
     # ---- Clustering ----
-    def cluster_taxonomy(self, issues: List[Dict], reviews: List[Dict]):
+    def cluster_taxonomy(self, issues: List[Dict], reviews: List[Dict], progress=None):
         issue_texts = [f"{i['title']}\n{i['body'][:500]}" for i in issues]
         review_texts = [r['review_text'][:500] for r in reviews]
 
         all_texts = issue_texts + review_texts
+        if progress:
+            progress(f"Embedding {len(issues)} issues + {len(reviews)} reviews locally...")
         embeddings = self.embed_texts(all_texts)
 
         issue_emb = embeddings[:len(issues)]
@@ -101,12 +106,16 @@ class GapAnalyzer:
 
         n_items = len(all_texts)
         k = min(14, max(5, n_items // 45))
+        if progress:
+            progress(f"Clustering into {k} shared functional areas...")
         km = KMeans(n_clusters=k, random_state=42, n_init=10)
         labels = km.fit_predict(embeddings)
 
         issue_labels = labels[:len(issues)]
         review_labels = labels[len(issues):]
 
+        if progress:
+            progress("Naming the functional areas...")
         cluster_info = self._label_clusters(k, issues, reviews, issue_labels, review_labels)
 
         return {
@@ -129,10 +138,11 @@ class GapAnalyzer:
                 'review_count': int(np.sum(review_labels == cid)),
             }
 
-        prompt = f"""You are naming functional areas of an Android privacy app (Orbot, a Tor proxy app).
+        prompt = f"""You are naming functional areas of {self.product.label}.
 Given clusters of GitHub issue titles and user review snippets, give each cluster a short (2-5 word)
-functional area label, e.g. "Bridges & censorship circumvention", "Battery drain", "VPN/tethering mode",
-"Onboarding & UX", "Notifications", "Stability & crashes", "Connection speed".
+functional area label naming the part of the product it concerns. Labels should be specific to this
+product's actual domain, not generic - e.g. "Battery drain", "Onboarding & UX", "Notifications",
+"Stability & crashes", "Sync & backup", "Playback controls".
 
 Clusters:
 {json.dumps(samples, indent=2)}
@@ -161,7 +171,7 @@ Return JSON: {{"0": "label", "1": "label", ...}} keyed by cluster id as string, 
             f"[{r['id']}] ({r.get('star', '?')}★) {r['review_text'][:300]}" for r in sample
         )
 
-        prompt = f"""You are analyzing user reviews of Orbot (a Tor anonymity/proxy Android app) in the
+        prompt = f"""You are analyzing user reviews of {self.product.label} in the
 functional area "{cluster_label}".
 
 Reviews (format: [review_id] (stars) text):
@@ -238,7 +248,7 @@ return {{"needs": []}}."""
                 allowed = ("MISUNDERSTOOD only — the ticket was delivered but is too weakly related to "
                            "claim it served this need, so the need survives whatever shipped.")
 
-        prompt = f"""User need (inferred from app reviews written around 2016): "{need_text}"
+        prompt = f"""User need (inferred from {self.product.name} app reviews): "{need_text}"
 
 Closest matching GitHub roadmap issue:
 Title: {best_issue['title']}
@@ -349,12 +359,15 @@ Return JSON: {{"verdict": "COVERED"|"UNDER-PRIORITIZED"|"MISUNDERSTOOD", "reason
         }
 
     # ---- Full pipeline ----
-    def run(self, issues: List[Dict], reviews: List[Dict], top_n: int = 5) -> Dict:
-        taxonomy = self.cluster_taxonomy(issues, reviews)
+    def run(self, issues: List[Dict], reviews: List[Dict], top_n: int = 5, progress=None) -> Dict:
+        taxonomy = self.cluster_taxonomy(issues, reviews, progress=progress)
         clusters = taxonomy['clusters']
 
         candidates = []
-        for cid, info in clusters.items():
+        total_clusters = len(clusters)
+        for step, (cid, info) in enumerate(clusters.items(), 1):
+            if progress:
+                progress(f"Mining latent needs — area {step}/{total_clusters}: {info['label']}")
             cluster_reviews = [r for i, r in enumerate(reviews) if taxonomy['review_clusters'][i] == cid]
             cluster_review_idx = [i for i, c in enumerate(taxonomy['review_clusters']) if c == cid]
             cluster_review_emb = taxonomy['review_embeddings'][cluster_review_idx]
@@ -433,6 +446,8 @@ Return JSON: {{"verdict": "COVERED"|"UNDER-PRIORITIZED"|"MISUNDERSTOOD", "reason
                     'cluster_id': cid,
                 })
 
+        if progress:
+            progress(f"Ranking {len(candidates)} candidate needs...")
         gap_candidates = [c for c in candidates if c['verdict'] != 'COVERED']
         gap_candidates.sort(key=lambda g: g['confidence'], reverse=True)
         top_gaps = gap_candidates[:top_n]

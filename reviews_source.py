@@ -1,39 +1,12 @@
-import os
+# -*- coding: utf-8 -*-
+"""Thin wrapper kept for backwards compatibility - the real work lives in sources.py."""
 from typing import List, Dict
-import duckdb
-from dotenv import load_dotenv
 
-load_dotenv()
-
-PARQUET_URL = "https://huggingface.co/datasets/sealuzh/app_reviews/resolve/main/data/train-00000-of-00001.parquet"
+from product import CURRENT
+from sources import fetch_reviews_from
 
 
-def fetch_reviews(package_name: str = None) -> List[Dict]:
-    """Pull reviews for a package from the sealuzh/app_reviews HF dataset."""
-    package_name = package_name or os.getenv('HF_REVIEW_PACKAGE', 'org.torproject.android')
-
-    con = duckdb.connect()
-    rows = con.execute(
-        f"""
-        SELECT review, star, date
-        FROM read_parquet('{PARQUET_URL}')
-        WHERE package_name = ?
-        """,
-        [package_name],
-    ).fetchall()
-
-    reviews = []
-    seen = set()
-    for review_text, star, date in rows:
-        if not review_text:
-            continue
-        text = review_text.strip()
-        if len(text) < 15:
-            continue
-        key = text[:100].lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        reviews.append({'review_text': text, 'star': star, 'review_date': date})
-
-    return reviews
+def fetch_reviews(package_name: str = None, source_id: str = None) -> List[Dict]:
+    """Pull user signals for a product from whichever dataset it belongs to."""
+    return fetch_reviews_from(source_id or CURRENT.source_id,
+                              package_name or CURRENT.package_name)

@@ -167,12 +167,36 @@ the roadmap *covers* a need on that basis is indefensible.
 Enforced by deterministic guards in `gap_analyzer.match_and_verdict`, not left to the LLM's discretion:
 ticket state and match strength are facts, so the code overrides the model when it strays.
 
-### ⚠️ Temporal caveat — know this before the defence
+---
 
-The review corpus is from **2016**; the roadmap runs 2016→2026. So "the roadmap never served this"
-means *not in ten years*. A judge may fairly ask whether a 2016 complaint was fixed later — the
-`completed` + strong-match → COVERED path is exactly how that is handled, and 6 needs were excluded
-on those grounds. Say this openly rather than being caught by it.
+## ⏱️ Response Latency — the headline finding
+
+What began as the analysis's biggest vulnerability ("your reviews are from 2016") became its
+central thesis. The corpus runs **Dec 2015 – May 2017**, while **889 of the 932** roadmap issues
+were opened *after* the last review was written. That makes the delay measurable:
+
+| # | Need | Users voiced | Roadmap answered | Latency |
+|---|---|---|---|---|
+| 1 | Safe deep-web navigation guidance | Mar 2016 – Apr 2017 | never — nearest ticket #570 is only 0.35 similar, opened Jan 2022 | **NEVER** |
+| 2 | Clear communication about speed | Dec 2015 – Jan 2017 | #1772 opened Jul 2026, still open | **9y 6m** |
+| 3 | Intuitive UI, less complexity | Jan 2016 – Apr 2017 | #116 opened Jan 2018 → closed Nov 2020 | 8m to open, **3y 7m** to close |
+| 4 | Faster connection times | Dec 2015 – Mar 2017 | #68 opened Mar 2017 → closed Nov 2020 | 20d to open, **3y 8m** to close |
+| 5 | Improved speed and performance | Dec 2015 – Nov 2016 | never — nearest #473 only 0.32 similar | **NEVER** |
+
+**2 of 5 needs were never framed as a ticket at all.** This is literally the silent stakeholder:
+the need was voiced, and the roadmap took years to answer it — or never did.
+
+`timeline.py` computes this from `review_date` vs `created_at`/`closed_at`/`state_reason`. Latency
+is measured from the **last** signal (the fairest reading — the team can only answer signals that
+already exist). It is surfaced in three places: a strip on every gap card, headline stats in the
+hero, and inside both the chat context and the panel's deterministic facts, so the assistant and
+the agents can reason about it too.
+
+### ⚠️ Say this before a judge does
+
+The corpus is 2016 and the roadmap runs to 2026, so "never served" means *not in ten years*.
+The `completed` + strong-match → COVERED path is exactly how "but they fixed it later" is handled —
+6 needs were excluded on those grounds. Lead with this rather than being caught by it.
 
 ### 🔍 Evidence Expansion (post-fix)
 
@@ -252,10 +276,78 @@ not complaint summarization per the brief), but be ready to explain that inferen
 
 ---
 
+## 📥 Data Sources — what the brief allows vs. what is actually usable
+
+All five permitted datasets were inspected, not assumed. The binding constraint is never
+size — it is whether a signal can be tied to **one product that also has a public GitHub
+roadmap**. Without that, "same product, both sides" is impossible.
+
+| Dataset | Product identifier | Verdict |
+|---|---|---|
+| `sealuzh/app_reviews` | `package_name`, 395 apps | ✅ **Backbone.** Almost all open-source, so package names map to repos |
+| `play_market_2025_1m` | `app_name`, 217 listed | ⚠️ **Partly.** Only **42** carry reviews and nearly all are closed-source; **Bluesky** is the one with a public tracker |
+| `Kerassy/trustpilot-reviews-123k` | `company` domain | ❌ Checked all **1,579** companies — every one is UK retail/services. None has an issue tracker |
+| `Tobi-Bueck/customer-support-tickets` | *none* | ❌ Columns are subject/body/answer/queue/priority. The tickets **name no product**, so they cannot be paired with any roadmap |
+| Kaggle 200k support tickets | *unknown* | ❌ Kaggle API returns **403** without credentials; schema unverifiable |
+
+`sources.py` implements this as a **pluggable registry**: each adapter declares its key field
+and whether it can identify a product. Adding a sixth dataset means writing one `fetch`
+function and registering it — no other file changes.
+
+**This is the honest answer to "why not all five?"** — three of them physically cannot satisfy
+the brief's own "same product, both sides" rule. The architecture reads them; the data cannot
+support them.
+
+**Proof the multi-source layer works:** Bluesky is analysed from `play2025`
+(8,136 reviews, Apr 2023 – Apr 2025) against `bluesky-social/social-app` (3,851 issues), while
+everything else comes from `sealuzh`. Both appear in the same product dropdown.
+
+---
+
+## 🔀 Works With Any Product
+
+Nothing is hardcoded to Orbot. A product is resolved once in `product.py` and flows into the
+review query, the GitHub fetch, every LLM prompt, the database filename and the UI copy.
+
+**Switch products three ways:**
+```bash
+ANALYSIS_PACKAGE=org.ppsspp.ppsspp python run_debate.py   # env var
+GITHUB_REPO=owner/repo PRODUCT_NAME="My App" streamlit run app.py   # manual override
+```
+…or just pick one from the **Product** dropdown in the sidebar and press *Re-run analysis*.
+
+Each product gets its own `gaps_<slug>.db` and `debate_<slug>.json`, so analyses never
+overwrite one another and you can switch back and forth instantly.
+
+### Finding analysable products
+
+`discover_projects.py` scans the review corpus, maps package names to GitHub repos, verifies
+every repo against the live API (existence, issue count, milestones, not archived) and scores
+both sides. A product is only usable if it has **substantial reviews AND a real issue tracker**.
+
+Top of the current catalogue (`discovered_projects.json`, 20 verified products):
+
+| # | Score | Product | Reviews | Issues | Milestones |
+|---|-------|---------|---------|--------|------------|
+| 1 | 98.1 | PPSSPP | 6,478 | 10,023 | 70 |
+| 2 | 93.7 | WordPress for Android | 2,612 | 8,899 | 100 |
+| 3 | 89.8 | Thunderbird / K-9 Mail | 1,484 | 6,046 | 52 |
+| 4 | 88.6 | AnkiDroid | 777 | 9,202 | 78 |
+| 5 | 88.4 | AntennaPod | 1,320 | 4,802 | 67 |
+| 11 | 79.4 | **Orbot** (current submission) | 2,351 | 932 | 13 |
+
+Regenerate with `python discover_projects.py --top 20`.
+
+---
+
 ## 🔐 Key Files
 
+- `product.py` — **Single source of truth for which product is analysed**; resolves package →
+  repo → display name → db path, from the catalogue or env vars
+- `discover_projects.py` — Finds and ranks products that have both sides (reviews + roadmap)
+- `timeline.py` — Response-latency computation (when users spoke vs when the roadmap answered)
 - `gap_analyzer.py` — Core pipeline (embed, cluster, extract needs, expand evidence, match, confidence)
-- `database.py` — SQLite persistence (issues, reviews, clusters, gaps, candidates)
+- `database.py` — SQLite persistence, one file per product (issues, reviews, clusters, gaps, candidates)
 - `app.py` — Streamlit dashboard (bilingual EN/RU, gap cards, grounded chat, analyst mode)
 - `project_chat.py` — Grounded Q&A: builds an evidence-rich context from the DB so the
   assistant can answer judge questions citing real review IDs / issue numbers

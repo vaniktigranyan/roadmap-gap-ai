@@ -17,6 +17,8 @@ import json
 import statistics
 from typing import List, Dict, Callable, Optional
 
+from timeline import gap_timeline, month_label
+from product import CURRENT
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -41,7 +43,7 @@ PANEL = {
         'label': 'Roadmap Owner',
         'emoji': '🗺️',
         'brief': (
-            "You own the Orbot roadmap and must defend it. For every gap, your job is to check "
+            "You own this product's roadmap and must defend it. For every gap, your job is to check "
             "whether the roadmap really is failing users or whether the analysis simply failed to "
             "find the right issue. Scrutinise each verdict: is IGNORED fair when the closest issue "
             "sits just under the match threshold? Is UNDER-PRIORITIZED fair for an issue that is "
@@ -89,7 +91,8 @@ def build_facts(gaps: List[Dict], candidates: List[Dict], reviews: List[Dict],
     L = []
 
     L.append("### CORPUS")
-    L.append(f"Product: Orbot (guardianproject/orbot-android) vs reviews of org.torproject.android.")
+    L.append(f"Product: {CURRENT.label}")
+    L.append(f"Roadmap repo {CURRENT.repo} vs reviews of package {CURRENT.package_name}.")
     L.append(f"{len(issues)} roadmap issues, {len(reviews)} user reviews, "
              f"{len(clusters)} shared functional clusters.")
     open_issues = sum(1 for i in issues if i['state'] == 'open')
@@ -157,6 +160,15 @@ def build_facts(gaps: List[Dict], candidates: List[Dict], reviews: List[Dict],
             if cl:
                 L.append(f"  NO match. closest was #{cl['number']} \"{cl['title']}\" at similarity "
                          f"{g.get('closest_issue_similarity')} (threshold 0.4) state={cl['state']}")
+        tl = gap_timeline(g, reviews_by_id, issues_by_number)
+        if tl['status'] == 'never':
+            L.append(f"  LATENCY: voiced {month_label(tl['first_signal'])}-{month_label(tl['last_signal'])}; "
+                     f"no ticket was EVER opened for this need.")
+        else:
+            L.append(f"  LATENCY: voiced {month_label(tl['first_signal'])}-{month_label(tl['last_signal'])}; "
+                     f"ticket opened {month_label(tl['issue_created'])} = {tl['latency_label']} later; "
+                     f"status {tl['status']}"
+                     + (f", closed {month_label(tl['issue_closed'])}." if tl['issue_closed'] else ", still open."))
         L.append("  reviews:")
         for r in ev:
             L.append(f"    [{r['id']}] {r.get('star','?')}* {r['review_text'][:200]}")
@@ -211,8 +223,9 @@ class DebatePanel:
     def _system(self, brief: str, facts: str) -> str:
         return (
             "You are on an adversarial review panel auditing a 'Silent Stakeholder' analysis: it "
-            "cross-analyses Orbot's GitHub roadmap against real user reviews to surface LATENT unmet "
-            "needs - needs users never stated outright. The bar is: prove it from the data.\n\n"
+            f"cross-analyses the GitHub roadmap of {CURRENT.label} against real user reviews to "
+            "surface LATENT unmet needs - needs users never stated outright. The bar is: prove it "
+            "from the data.\n\n"
             f"YOUR ROLE: {brief}\n\n"
             "HARD RULES:\n"
             "- The FACTS block is computed deterministically from the database. Every number and the "

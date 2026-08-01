@@ -2,10 +2,9 @@ TRANSLATIONS = {
     'en': {
         # ---- Hero ----
         'main_header': '🕵️ The Silent Stakeholder',
-        'hero_sub': 'Latent user needs that Orbot\'s roadmap is missing — inferred from what users '
-                    'never said outright, and proven from the data.',
-        'hero_meta': 'Roadmap: guardianproject/orbot-android ({issues} issues) · '
-                     'User signals: {reviews} app reviews (org.torproject.android)',
+        'hero_sub': 'Latent needs users never stated outright — and how long the roadmap took to '
+                    'answer them, if it ever did. Every number traces back to specific reviews.',
+        'hero_meta': 'Roadmap: {issues} issues · User signals: {reviews} app reviews',
 
 
         # ---- Hero (new) ----
@@ -18,11 +17,37 @@ TRANSLATIONS = {
         'hero_considered': 'Considered',
         'hero_candidates_word': 'candidate needs',
 
+        # ---- Response-latency timeline ----
+        'stat_never': 'Never framed at all',
+        'stat_never_tip': 'Of the top-{n} needs, this many have no matching GitHub issue at any '
+                           'similarity above the 0.4 threshold — the roadmap never turned them into a ticket.',
+        'stat_worst_latency': 'Longest silence',
+        'stat_worst_latency_tip': 'The largest gap, among needs that DID get a ticket, between the last '
+                                   'time users voiced the need and the day the ticket was opened.',
+        'tl_users_spoke': 'Users spoke',
+        'tl_roadmap_answered': 'Roadmap answered',
+        'tl_users_voiced': '{n} reviews said it',
+        'tl_never': 'NEVER',
+        'tl_no_ticket': 'No ticket, ever',
+        'tl_closest_only': 'nearest ticket #{number} is only {sim} similar',
+        'tl_roadmap_silent': 'roadmap silent',
+        'tl_opened_still_open': '#{number} opened · still open today',
+        'tl_resolved_in': '#{number} opened · then took {span} to close',
+        'tl_declined': '#{number} opened · closed as not planned',
+
         # ---- Summary strip ----
         'stat_needs': 'Unmet needs surfaced',
+        'stat_needs_tip': 'How many latent needs made the ranked top list — never more than 5, per the brief.',
         'stat_cited': 'Reviews cited as evidence',
+        'stat_cited_tip': 'Unique review IDs used as evidence across the top needs (up to 15 per need, '
+                           'no double-counting). Every ID is a real, checkable review in the corpus.',
         'stat_verdicts': 'Verdict mix',
+        'stat_verdicts_tip': 'How the roadmap failed each need: IGNORED = no ticket exists; '
+                              'UNDER-PRIORITIZED = a ticket exists but sits open/stale; '
+                              'MISUNDERSTOOD = a ticket exists but solves a different problem.',
         'stat_upheld': 'Upheld by the panel',
+        'stat_upheld_tip': 'How many of the top needs a 4-agent adversarial panel (User Advocate, '
+                            'Roadmap Owner, Evidence Auditor, Judge) independently confirmed as defensible.',
 
         # ---- Panel rulings ----
         'ruling_upheld': 'UPHELD',
@@ -41,7 +66,36 @@ TRANSLATIONS = {
         'phase_rebuttal': 'Answering the judge',
         'phase_ruling': 'Ruling',
 
+        # ---- Panel roles + raw-data column headers ----
+        'agent_user_advocate': 'User Advocate',
+        'agent_roadmap_owner': 'Roadmap Owner',
+        'agent_evidence_auditor': 'Evidence Auditor',
+        'agent_judge': 'Judge',
+        'col_number': 'Issue #',
+        'col_title': 'Title',
+        'col_state': 'State',
+        'col_state_reason': 'Closed as',
+        'col_milestone_title': 'Milestone',
+        'col_cluster': 'Functional area',
+        'col_reactions_plus1': '👍 reactions',
+        'col_html_url': 'Link',
+        'col_id': 'Review ID',
+        'col_star': 'Stars',
+        'col_review_date': 'Date',
+        'col_review_text': 'Review',
+        'col_open_issues': 'Open issues',
+        'col_closed_issues': 'Closed issues',
+        'col_due_on': 'Due',
+
         # ---- Sidebar ----
+        'product_label': '📦 Product',
+        'product_help': 'Any app with both a large review corpus and a public GitHub roadmap. '
+                        'Run `python discover_projects.py` to refresh the catalogue.',
+        'sidebar_roadmap': 'Roadmap:',
+        'sidebar_signals': 'Signals:',
+        'product_ready': '✅ Analysed — {n} needs below',
+        'product_not_analysed': '⚠️ Not analysed yet — press Re-run analysis',
+        'hero_product': 'Product',
         'language_label': '🌐 Language',
         'advanced_mode': '🔬 Analyst mode',
         'advanced_mode_help': 'Show the full audit trail: every candidate considered, the shared '
@@ -141,6 +195,23 @@ TRANSLATIONS = {
         'tab_reviews': 'Reviews',
         'tab_milestones': 'Milestones',
 
+        # ---- Pipeline run feedback ----
+        'run_status_title': 'Analysing {product}…',
+        'run_status_done': '✅ {product} analysed',
+        'run_status_failed': '❌ Analysis failed: {error}',
+        'run_github': 'Connecting to GitHub — {repo}',
+        'run_github_milestones': 'Found {n} milestones · now loading issues from {repo}',
+        'run_github_paging': 'Loading roadmap from {repo} — {n} items so far…',
+        'run_github_done': 'Roadmap loaded — {n} issues',
+        'run_reviews': 'Downloading user reviews for {package}…',
+        'run_reviews_done': 'Reviews loaded — {n} of them',
+        'run_no_reviews': 'No reviews found for {package} in the dataset — nothing to analyse',
+        'run_saving_sources': 'Storing both sides in the database…',
+        'run_saving_results': 'Saving the results…',
+        'run_done': 'Done — {n} unmet needs surfaced',
+        'run_success': 'Surfaced {n} unmet needs for {product}.',
+        'run_show_results': 'Show the results',
+
         # ---- Pipeline status ----
         'status_fetching_github': '📥 Fetching GitHub issues + milestones...',
         'status_fetching_reviews': '📥 Fetching reviews from the HuggingFace dataset...',
@@ -148,17 +219,16 @@ TRANSLATIONS = {
         'status_saving': '💾 Saving results...',
         'status_done': '✅ Done',
 
-        'footer': 'Silent Stakeholder — latent need discovery by cross-analyzing a GitHub roadmap '
-                  'against real app reviews',
+        'footer': 'Silent Stakeholder — latent need discovery by cross-analyzing a product\'s '
+                  'GitHub roadmap against its real app reviews',
     },
 
     'ru': {
         # ---- Hero ----
         'main_header': '🕵️ Молчаливый стейкхолдер',
-        'hero_sub': 'Скрытые потребности пользователей, которых нет в roadmap Orbot — выведены из того, '
-                    'о чём пользователи прямо не сказали, и доказаны данными.',
-        'hero_meta': 'Roadmap: guardianproject/orbot-android ({issues} issues) · '
-                     'Сигналы пользователей: {reviews} отзывов (org.torproject.android)',
+        'hero_sub': 'Скрытые потребности, о которых пользователи прямо не сказали — и сколько лет '
+                    'roadmap шёл к ним, если дошёл вообще. Каждое число ведёт к конкретным отзывам.',
+        'hero_meta': 'Roadmap: {issues} issues · Сигналы пользователей: {reviews} отзывов',
 
 
         # ---- Hero (new) ----
@@ -171,11 +241,37 @@ TRANSLATIONS = {
         'hero_considered': 'Рассмотрено',
         'hero_candidates_word': 'кандидатов',
 
+        # ---- Response-latency timeline ----
+        'stat_never': 'Так и не оформлено',
+        'stat_never_tip': 'Из топ-{n} потребностей — столько не имеют ни одного тикета GitHub со схожестью '
+                           'выше порога 0.4: roadmap ни разу не оформил их в задачу.',
+        'stat_worst_latency': 'Дольше всего молчали',
+        'stat_worst_latency_tip': 'Самый большой разрыв (среди потребностей, у которых тикет всё же появился) '
+                                   'между последним упоминанием проблемы пользователями и датой открытия тикета.',
+        'tl_users_spoke': 'Пользователи сказали',
+        'tl_roadmap_answered': 'Roadmap ответил',
+        'tl_users_voiced': 'об этом писали в {n} отзывах',
+        'tl_never': 'НИКОГДА',
+        'tl_no_ticket': 'Тикета так и не было',
+        'tl_closest_only': 'ближайший тикет #{number} схож лишь на {sim}',
+        'tl_roadmap_silent': 'roadmap молчал',
+        'tl_opened_still_open': '#{number} открыт · до сих пор открыт',
+        'tl_resolved_in': '#{number} открыт · закрывали ещё {span}',
+        'tl_declined': '#{number} открыт · закрыт как «не планируется»',
+
         # ---- Summary strip ----
         'stat_needs': 'Найдено потребностей',
+        'stat_needs_tip': 'Сколько скрытых потребностей попало в итоговый топ — по условиям брифа не больше 5.',
         'stat_cited': 'Отзывов в доказательствах',
+        'stat_cited_tip': 'Уникальные ID отзывов, использованные как доказательство по всем потребностям '
+                           'топа (до 15 на каждую, без задвоений). Каждый ID — реальный, проверяемый отзыв.',
         'stat_verdicts': 'Состав вердиктов',
+        'stat_verdicts_tip': 'Как именно roadmap подвёл каждую потребность: ИГНОРИРУЕТСЯ — тикета нет; '
+                              'НЕДООЦЕНЕНО — тикет есть, но висит открытым/без движения; '
+                              'ПОНЯТО НЕВЕРНО — тикет есть, но решает другую проблему.',
         'stat_upheld': 'Подтверждено панелью',
+        'stat_upheld_tip': 'Сколько потребностей из топа независимо подтвердила панель из 4 агентов '
+                            '(адвокат пользователя, владелец roadmap, аудитор доказательств, судья).',
 
         # ---- Panel rulings ----
         'ruling_upheld': 'ПОДТВЕРЖДЕНО',
@@ -194,7 +290,36 @@ TRANSLATIONS = {
         'phase_rebuttal': 'Ответы судье',
         'phase_ruling': 'Решение',
 
+        # ---- Panel roles + raw-data column headers ----
+        'agent_user_advocate': 'Адвокат пользователей',
+        'agent_roadmap_owner': 'Владелец roadmap',
+        'agent_evidence_auditor': 'Аудитор доказательств',
+        'agent_judge': 'Судья',
+        'col_number': '№ issue',
+        'col_title': 'Заголовок',
+        'col_state': 'Статус',
+        'col_state_reason': 'Как закрыт',
+        'col_milestone_title': 'Milestone',
+        'col_cluster': 'Функциональная зона',
+        'col_reactions_plus1': '👍 реакций',
+        'col_html_url': 'Ссылка',
+        'col_id': 'ID отзыва',
+        'col_star': 'Оценка',
+        'col_review_date': 'Дата',
+        'col_review_text': 'Текст отзыва',
+        'col_open_issues': 'Открытых issues',
+        'col_closed_issues': 'Закрытых issues',
+        'col_due_on': 'Срок',
+
         # ---- Sidebar ----
+        'product_label': '📦 Продукт',
+        'product_help': 'Любое приложение, у которого есть и большой корпус отзывов, и публичный '
+                        'GitHub-роадмап. Обновить список: `python discover_projects.py`.',
+        'sidebar_roadmap': 'Roadmap:',
+        'sidebar_signals': 'Сигналы:',
+        'product_ready': '✅ Проанализировано — {n} потребностей ниже',
+        'product_not_analysed': '⚠️ Ещё не анализировали — нажмите «Перезапустить анализ»',
+        'hero_product': 'Продукт',
         'language_label': '🌐 Язык',
         'advanced_mode': '🔬 Режим аналитика',
         'advanced_mode_help': 'Показать полную цепочку аудита: все рассмотренные кандидаты, общую '
@@ -296,6 +421,23 @@ TRANSLATIONS = {
         'tab_reviews': 'Отзывы',
         'tab_milestones': 'Milestones',
 
+        # ---- Pipeline run feedback ----
+        'run_status_title': 'Анализирую {product}…',
+        'run_status_done': '✅ {product} проанализирован',
+        'run_status_failed': '❌ Анализ не удался: {error}',
+        'run_github': 'Подключаюсь к GitHub — {repo}',
+        'run_github_milestones': 'Найдено {n} milestones · загружаю issues из {repo}',
+        'run_github_paging': 'Загружаю roadmap из {repo} — уже {n} элементов…',
+        'run_github_done': 'Roadmap загружен — {n} issues',
+        'run_reviews': 'Скачиваю отзывы пользователей для {package}…',
+        'run_reviews_done': 'Отзывы загружены — {n} штук',
+        'run_no_reviews': 'Для {package} в датасете нет отзывов — анализировать нечего',
+        'run_saving_sources': 'Сохраняю обе стороны в базу…',
+        'run_saving_results': 'Сохраняю результаты…',
+        'run_done': 'Готово — найдено {n} неудовлетворённых потребностей',
+        'run_success': 'Для {product} найдено {n} неудовлетворённых потребностей.',
+        'run_show_results': 'Показать результаты',
+
         # ---- Pipeline status ----
         'status_fetching_github': '📥 Загружаю issues и milestones из GitHub...',
         'status_fetching_reviews': '📥 Загружаю отзывы из датасета HuggingFace...',
@@ -303,8 +445,8 @@ TRANSLATIONS = {
         'status_saving': '💾 Сохраняю результаты...',
         'status_done': '✅ Готово',
 
-        'footer': 'Silent Stakeholder — поиск скрытых потребностей через сопоставление GitHub roadmap '
-                  'и реальных отзывов на приложение',
+        'footer': 'Silent Stakeholder — поиск скрытых потребностей сопоставлением GitHub roadmap '
+                  'любого продукта с реальными отзывами на него',
     },
 }
 

@@ -1,3 +1,27 @@
-# Environments
+# Secrets — API keys live here, never commit
 .env
 
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Analysis output — regenerate from the sidebar's "Re-run analysis".
+# These grow large (PPSSPP alone is ~9 MB) and change on every run.
+*.db
+
+# Logs from pipeline and panel runs
+*.log
+
+# Scratch / probe files
+kgmeta.json
+
+# Local editor + tooling state
+.claude/settings.local.json
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
