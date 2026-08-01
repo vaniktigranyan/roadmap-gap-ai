@@ -19,7 +19,11 @@ TRANSLATIONS = {
 
         # ---- Response-latency timeline ----
         'stat_never': 'Never framed at all',
+        'stat_never_tip': 'Of the top-{n} needs, this many have no matching GitHub issue at any '
+                           'similarity above the 0.4 threshold — the roadmap never turned them into a ticket.',
         'stat_worst_latency': 'Longest silence',
+        'stat_worst_latency_tip': 'The largest gap, among needs that DID get a ticket, between the last '
+                                   'time users voiced the need and the day the ticket was opened.',
         'tl_users_spoke': 'Users spoke',
         'tl_roadmap_answered': 'Roadmap answered',
         'tl_users_voiced': '{n} reviews said it',
@@ -33,9 +37,17 @@ TRANSLATIONS = {
 
         # ---- Summary strip ----
         'stat_needs': 'Unmet needs surfaced',
+        'stat_needs_tip': 'How many latent needs made the ranked top list — never more than 5, per the brief.',
         'stat_cited': 'Reviews cited as evidence',
+        'stat_cited_tip': 'Unique review IDs used as evidence across the top needs (up to 15 per need, '
+                           'no double-counting). Every ID is a real, checkable review in the corpus.',
         'stat_verdicts': 'Verdict mix',
+        'stat_verdicts_tip': 'How the roadmap failed each need: IGNORED = no ticket exists; '
+                              'UNDER-PRIORITIZED = a ticket exists but sits open/stale; '
+                              'MISUNDERSTOOD = a ticket exists but solves a different problem.',
         'stat_upheld': 'Upheld by the panel',
+        'stat_upheld_tip': 'How many of the top needs a 4-agent adversarial panel (User Advocate, '
+                            'Roadmap Owner, Evidence Auditor, Judge) independently confirmed as defensible.',
 
         # ---- Panel rulings ----
         'ruling_upheld': 'UPHELD',
@@ -231,7 +243,11 @@ TRANSLATIONS = {
 
         # ---- Response-latency timeline ----
         'stat_never': 'Так и не оформлено',
+        'stat_never_tip': 'Из топ-{n} потребностей — столько не имеют ни одного тикета GitHub со схожестью '
+                           'выше порога 0.4: roadmap ни разу не оформил их в задачу.',
         'stat_worst_latency': 'Дольше всего молчали',
+        'stat_worst_latency_tip': 'Самый большой разрыв (среди потребностей, у которых тикет всё же появился) '
+                                   'между последним упоминанием проблемы пользователями и датой открытия тикета.',
         'tl_users_spoke': 'Пользователи сказали',
         'tl_roadmap_answered': 'Roadmap ответил',
         'tl_users_voiced': 'об этом писали в {n} отзывах',
@@ -245,9 +261,17 @@ TRANSLATIONS = {
 
         # ---- Summary strip ----
         'stat_needs': 'Найдено потребностей',
+        'stat_needs_tip': 'Сколько скрытых потребностей попало в итоговый топ — по условиям брифа не больше 5.',
         'stat_cited': 'Отзывов в доказательствах',
+        'stat_cited_tip': 'Уникальные ID отзывов, использованные как доказательство по всем потребностям '
+                           'топа (до 15 на каждую, без задвоений). Каждый ID — реальный, проверяемый отзыв.',
         'stat_verdicts': 'Состав вердиктов',
+        'stat_verdicts_tip': 'Как именно roadmap подвёл каждую потребность: ИГНОРИРУЕТСЯ — тикета нет; '
+                              'НЕДООЦЕНЕНО — тикет есть, но висит открытым/без движения; '
+                              'ПОНЯТО НЕВЕРНО — тикет есть, но решает другую проблему.',
         'stat_upheld': 'Подтверждено панелью',
+        'stat_upheld_tip': 'Сколько потребностей из топа независимо подтвердила панель из 4 агентов '
+                            '(адвокат пользователя, владелец roadmap, аудитор доказательств, судья).',
 
         # ---- Panel rulings ----
         'ruling_upheld': 'ПОДТВЕРЖДЕНО',

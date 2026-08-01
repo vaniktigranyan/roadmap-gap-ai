@@ -16,8 +16,11 @@ if sys.platform == 'win32':
 
 from database import GapAnalysisDB
 from debate_orchestrator import DebatePanel
+from product import CURRENT
 
-OUT = "debate_result.json"
+# Per-product output: analyses of different products must never overwrite
+# each other's panel rulings.
+OUT = CURRENT.debate_path
 
 
 def main():

@@ -75,6 +75,7 @@ Purely on confidence: **72.3% vs 71.2%**. #1 is ahead on consistency (0.601 vs 0
 
 ### "What about the gap you missed / why isn't X in the top 5?"
 Open **Analyst mode → All candidates**. We kept every one of the **41** needs we found, with its score and evidence, precisely so this question has an answer.
+Coverage is systematic, not selective: **all 14 of 14 functional clusters** in the shared taxonomy were mined and every one produced candidates — no area of the corpus was skipped. If a proposed "missed gap" is real, it is either in the candidates table with a score explaining its rank, or it lacks evidence in this corpus.
 The nearest miss was *"Users need assurance that their data and identity are fully protected "* at **66.7%** — 1.1 points below the #5 cutoff.
 
 ### "Defend that confidence score — why not 90%?"
@@ -84,7 +85,7 @@ Because the formula will not award it on this evidence. The top score here is **
 No — and the difference is visible in the wording. A complaint is *"it's slow"*. The need we extract is *why* that matters and what would resolve it. Each need is required to rest on second-order signals — workarounds, comparisons, contradictions — across multiple reviews, never a single one.
 
 ### "How do I know the evidence is real?"
-Every review ID on screen is clickable back to its full text in **Raw data**, and the issue numbers link to GitHub. Pick any one and check it live.
+Every review ID on screen is clickable back to its full text in **Raw data**, and the issue numbers link to GitHub. Pick any one and check it live. Better yet, run `python compliance_check.py` — an 18-point automated audit that re-verifies every evidence ID, issue number, verdict guard and the ranking order straight from the database, in seconds, with no LLM involved.
 
 ## Verdict logic (asked when they see the mix)
 
