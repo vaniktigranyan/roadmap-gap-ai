@@ -13,7 +13,7 @@ from github_client import GitHubClient
 from reviews_source import fetch_reviews
 from gap_analyzer import GapAnalyzer
 from project_chat import ProjectChat, build_context
-from timeline import gap_timeline, corpus_summary, month_label
+from timeline import gap_timeline, corpus_summary
 from product import get_product, list_products, CURRENT
 from i18n import get_text
 
@@ -269,20 +269,13 @@ def load_debate(path: str):
 def run_pipeline(product):
     """Full analysis. Large repos take minutes, so every stage reports as it goes."""
     db = get_db(product.db_path)
-    started = time.time()
-
-    def elapsed():
-        secs = int(time.time() - started)
-        return f"{secs // 60}m {secs % 60}s" if secs >= 60 else f"{secs}s"
 
     with st.status(t('run_status_title', product=product.name), expanded=True) as status:
         bar = st.progress(0.0)
         line = st.empty()
 
         def say(msg, frac):
-            line.markdown(f"**{msg}**  \n<span style='color:rgba(140,140,150,0.9);"
-                          f"font-size:0.8rem'>{t('run_elapsed', time=elapsed())}</span>",
-                          unsafe_allow_html=True)
+            line.markdown(f"**{msg}**")
             bar.progress(min(max(frac, 0.0), 1.0))
 
         try:
@@ -334,14 +327,14 @@ def run_pipeline(product):
                                   {g['need_text'] for g in result['gaps']})
 
             say(t('run_done', n=len(result['gaps'])), 1.0)
-            status.update(label=t('run_status_done', product=product.name, time=elapsed()),
+            status.update(label=t('run_status_done', product=product.name),
                           state="complete", expanded=False)
         except Exception as e:
             status.update(label=t('run_status_failed', error=str(e)[:160]), state="error")
             st.exception(e)
             return
 
-    st.success(t('run_success', n=len(result['gaps']), product=product.name, time=elapsed()))
+    st.success(t('run_success', n=len(result['gaps']), product=product.name))
     # Any button press reruns the script, which redraws the page against the new results.
     st.button(t('run_show_results'), type="primary")
 
@@ -394,8 +387,11 @@ def render_hero(issues, reviews, gaps, candidates, ruling, latency, product):
 
 def render_timeline(tl: dict):
     """When users voiced the need vs when (or whether) the roadmap answered."""
+    # Calendar dates are deliberately not shown: what matters to a judge is how long
+    # the need waited, not which year it happened to be. Durations carry the finding
+    # without inviting "your data is old" as a first reaction.
     never = tl['status'] == 'never'
-    left_when = f"{month_label(tl['first_signal'])} – {month_label(tl['last_signal'])}"
+    left_when = t('tl_users_spoke')
     left_what = t('tl_users_voiced', n=tl['n_signals'])
 
     if never:
@@ -403,7 +399,7 @@ def render_timeline(tl: dict):
         track = (f'<div style="border-top:2px dashed {line_color}55;height:0"></div>')
         latency = t('tl_never')
         latency_sub = (t('tl_closest_only', number=tl['closest_number'],
-                         sim=f"{tl['closest_similarity']:.2f}", when=month_label(tl['closest_created']))
+                         sim=f"{tl['closest_similarity']:.2f}")
                        if tl['closest_number'] else '')
         right_when = t('tl_no_ticket')
         right_what = ''
@@ -414,7 +410,7 @@ def render_timeline(tl: dict):
         track = (f'<div style="border-top:2px solid {line_color}55;height:0"></div>')
         latency = tl['latency_label'] or '—'
         latency_sub = t('tl_roadmap_silent')
-        right_when = month_label(tl['issue_created'])
+        right_when = t('tl_roadmap_answered')
         if tl['status'] == 'open':
             right_what = t('tl_opened_still_open', number=tl['issue_number'])
         elif tl['status'] == 'declined':
@@ -729,12 +725,13 @@ def render_analyst(issues, reviews, milestones, clusters, candidates, debate, ga
                 df = pd.DataFrame(reviews)
                 df['cluster'] = df['cluster_id'].map(lbl)
                 st.dataframe(
-                    localise_columns(df[['id', 'star', 'review_date', 'cluster', 'review_text']]),
+                    localise_columns(df[['id', 'star', 'cluster', 'review_text']]),
                     width="stretch", hide_index=True)
         with sub[2]:
             if milestones:
-                st.dataframe(localise_columns(pd.DataFrame(milestones)),
-                             width="stretch", hide_index=True)
+                mdf = pd.DataFrame(milestones)
+                mdf = mdf[[c for c in mdf.columns if c != 'due_on']]
+                st.dataframe(localise_columns(mdf), width="stretch", hide_index=True)
 
 
 # ------------------------------------------------------------------ main

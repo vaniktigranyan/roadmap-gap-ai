@@ -20,10 +20,12 @@ TRANSLATIONS = {
         # ---- Response-latency timeline ----
         'stat_never': 'Never framed at all',
         'stat_worst_latency': 'Longest silence',
-        'tl_users_voiced': '{n} users voiced it',
+        'tl_users_spoke': 'Users spoke',
+        'tl_roadmap_answered': 'Roadmap answered',
+        'tl_users_voiced': '{n} reviews said it',
         'tl_never': 'NEVER',
         'tl_no_ticket': 'No ticket, ever',
-        'tl_closest_only': 'nearest ticket #{number} is only {sim} similar, and arrived {when}',
+        'tl_closest_only': 'nearest ticket #{number} is only {sim} similar',
         'tl_roadmap_silent': 'roadmap silent',
         'tl_opened_still_open': '#{number} opened · still open today',
         'tl_resolved_in': '#{number} opened · then took {span} to close',
@@ -183,9 +185,8 @@ TRANSLATIONS = {
 
         # ---- Pipeline run feedback ----
         'run_status_title': 'Analysing {product}…',
-        'run_status_done': '✅ {product} analysed in {time}',
+        'run_status_done': '✅ {product} analysed',
         'run_status_failed': '❌ Analysis failed: {error}',
-        'run_elapsed': 'elapsed {time}',
         'run_github': 'Connecting to GitHub — {repo}',
         'run_github_milestones': 'Found {n} milestones · now loading issues from {repo}',
         'run_github_paging': 'Loading roadmap from {repo} — {n} items so far…',
@@ -196,7 +197,7 @@ TRANSLATIONS = {
         'run_saving_sources': 'Storing both sides in the database…',
         'run_saving_results': 'Saving the results…',
         'run_done': 'Done — {n} unmet needs surfaced',
-        'run_success': 'Surfaced {n} unmet needs for {product} in {time}.',
+        'run_success': 'Surfaced {n} unmet needs for {product}.',
         'run_show_results': 'Show the results',
 
         # ---- Pipeline status ----
@@ -231,10 +232,12 @@ TRANSLATIONS = {
         # ---- Response-latency timeline ----
         'stat_never': 'Так и не оформлено',
         'stat_worst_latency': 'Дольше всего молчали',
-        'tl_users_voiced': '{n} пользователей сказали',
+        'tl_users_spoke': 'Пользователи сказали',
+        'tl_roadmap_answered': 'Roadmap ответил',
+        'tl_users_voiced': 'об этом писали в {n} отзывах',
         'tl_never': 'НИКОГДА',
         'tl_no_ticket': 'Тикета так и не было',
-        'tl_closest_only': 'ближайший тикет #{number} схож лишь на {sim} и появился {when}',
+        'tl_closest_only': 'ближайший тикет #{number} схож лишь на {sim}',
         'tl_roadmap_silent': 'roadmap молчал',
         'tl_opened_still_open': '#{number} открыт · до сих пор открыт',
         'tl_resolved_in': '#{number} открыт · закрывали ещё {span}',
@@ -396,9 +399,8 @@ TRANSLATIONS = {
 
         # ---- Pipeline run feedback ----
         'run_status_title': 'Анализирую {product}…',
-        'run_status_done': '✅ {product} проанализирован за {time}',
+        'run_status_done': '✅ {product} проанализирован',
         'run_status_failed': '❌ Анализ не удался: {error}',
-        'run_elapsed': 'прошло {time}',
         'run_github': 'Подключаюсь к GitHub — {repo}',
         'run_github_milestones': 'Найдено {n} milestones · загружаю issues из {repo}',
         'run_github_paging': 'Загружаю roadmap из {repo} — уже {n} элементов…',
@@ -409,7 +411,7 @@ TRANSLATIONS = {
         'run_saving_sources': 'Сохраняю обе стороны в базу…',
         'run_saving_results': 'Сохраняю результаты…',
         'run_done': 'Готово — найдено {n} неудовлетворённых потребностей',
-        'run_success': 'Для {product} найдено {n} неудовлетворённых потребностей за {time}.',
+        'run_success': 'Для {product} найдено {n} неудовлетворённых потребностей.',
         'run_show_results': 'Показать результаты',
 
         # ---- Pipeline status ----
